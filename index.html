@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini FIFA Online 4 - PK Shootout</title>
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #222;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 { margin-bottom: 10px; color: #4fd1c5; }
+
+        /* 게임 영역 스타일 */
+        #game-container {
+            position: relative;
+            width: 400px;
+            height: 500px;
+            background: linear-gradient(to bottom, #2e7d32, #4caf50);
+            border: 5px solid #fff;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+
+        /* 골대 */
+        #goal-area {
+            position: absolute;
+            top: 0;
+            left: 50px;
+            width: 300px;
+            height: 80px;
+            border-left: 5px solid white;
+            border-right: 5px solid white;
+            border-top: 5px solid white;
+            background: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,0.2) 10px, rgba(255,255,255,0.2) 20px);
+        }
+
+        /* 골키퍼 */
+        #keeper {
+            position: absolute;
+            top: 50px;
+            left: 175px;
+            width: 50px;
+            height: 50px;
+            background-color: #ffeb3b;
+            border-radius: 50%;
+            border: 2px solid #333;
+            transition: left 0.1s;
+            z-index: 2;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            color: black;
+        }
+
+        /* 공 */
+        #ball {
+            position: absolute;
+            bottom: 50px;
+            left: 180px;
+            width: 40px;
+            height: 40px;
+            background: radial-gradient(circle at 10px 10px, #fff, #ccc);
+            border-radius: 50%;
+            border: 1px solid #999;
+            cursor: pointer;
+            z-index: 3;
+            transition: all 0.5s ease-in;
+        }
+
+        .score-board {
+            margin-top: 20px;
+            font-size: 24px;
+        }
+
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 40px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px #000;
+            display: none;
+            z-index: 10;
+        }
+
+        /* 순위표 스타일 */
+        #leaderboard-section {
+            margin-top: 30px;
+            width: 400px;
+            background: #333;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; text-align: center; border-bottom: 1px solid #555; }
+        th { color: #4fd1c5; }
+
+        /* 입력 폼 */
+        #save-form {
+            display: none;
+            margin-top: 20px;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            position: absolute;
+            top: 200px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 20;
+        }
+        input { padding: 8px; border-radius: 4px; border: none; }
+        button { padding: 8px 16px; background: #4fd1c5; border: none; color: #000; cursor: pointer; border-radius: 4px; font-weight: bold;}
+        button:hover { background: #38b2ac; }
+
+    </style>
+</head>
+<body>
+
+    <h1>MINI FIFA PK ONLINE</h1>
+    <div class="score-board">현재 점수: <span id="current-score">0</span></div>
+
+    <div id="game-container">
+        <div id="goal-area"></div>
+        <div id="keeper">GK</div>
+        <div id="ball"></div>
+        <div id="message">GOAL!</div>
+        
+        <div id="save-form">
+            <h3>게임 종료!</h3>
+            <p>최종 점수: <span id="final-score">0</span></p>
+            <input type="text" id="player-name" placeholder="닉네임 입력" maxlength="10">
+            <button onclick="saveScore()">랭킹 등록</button>
+            <button onclick="resetGame()">다시 하기</button>
+        </div>
+    </div>
+    <p style="font-size: 14px; color: #ccc;">공을 클릭하거나 터치하여 슛을 하세요!</p>
+
+    <div id="leaderboard-section">
+        <h3>🏆 명예의 전당 (Top 10)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>순위</th>
+                    <th>닉네임</th>
+                    <th>점수</th>
+                </tr>
+            </thead>
+            <tbody id="ranking-list">
+                <tr><td colspan="3">로딩 중...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <script>
+        // ==========================================
+        // [중요] Firebase 설정 - 본인의 설정값으로 교체하세요
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "여기에_API_KEY_입력",
+            authDomain: "본인프로젝트.firebaseapp.com",
+            databaseURL: "https://본인프로젝트-default-rtdb.firebaseio.com",
+            projectId: "본인프로젝트ID",
+            storageBucket: "본인프로젝트.appspot.com",
+            messagingSenderId: "SENDER_ID",
+            appId: "APP_ID"
+        };
+
+        // Firebase 초기화 (설정값이 없으면 오류가 나므로 try-catch 처리)
+        try {
+            firebase.initializeApp(firebaseConfig);
+            console.log("Firebase Connected");
+        } catch (e) {
+            console.error("Firebase 설정이 필요합니다. 코드를 열어 firebaseConfig를 수정하세요.");
+            document.getElementById('ranking-list').innerHTML = "<tr><td colspan='3'>DB 연결 필요</td></tr>";
+        }
+
+        const db = firebase.database();
+
+        // 게임 변수
+        let score = 0;
+        let isGaming = true;
+        let keeperSpeed = 2000; // 초기 키퍼 속도 (ms)
+        let keeperDirection = 1; // 1: 오른쪽, -1: 왼쪽
+        let keeperInterval;
+        
+        const keeper = document.getElementById('keeper');
+        const ball = document.getElementById('ball');
+        const msg = document.getElementById('message');
+        const saveForm = document.getElementById('save-form');
+        
+        // 게임 루프 시작 (키퍼 움직임)
+        function startGame() {
+            isGaming = true;
+            score = 0;
+            document.getElementById('current-score').innerText = score;
+            saveForm.style.display = 'none';
+            resetPositions();
+            moveKeeper();
+        }
+
+        // 키퍼 움직이기 (CSS Animation 대신 JS로 제어하여 충돌 감지 용이하게 함)
+        function moveKeeper() {
+            let pos = 175;
+            let direction = 1;
+            
+            // 난이도 조절: 점수가 높을수록 빨라짐
+            let speed = 3 + Math.floor(score / 3); 
+
+            clearInterval(keeperInterval);
+            keeperInterval = setInterval(() => {
+                if (!isGaming) return;
+
+                pos += speed * direction;
+                
+                // 좌우 벽 충돌 체크 (게임 컨테이너 400px, 키퍼 50px)
+                if (pos > 350) {
+                    pos = 350;
+                    direction = -1;
+                } else if (pos < 0) {
+                    pos = 0;
+                    direction = 1;
+                }
+                keeper.style.left = pos + 'px';
+            }, 20);
+        }
+
+        // 슛 하기
+        ball.addEventListener('click', () => {
+            if (!isGaming) return;
+            isGaming = false; // 슛 하는 동안 게임 정지
+
+            // 공이 날아가는 애니메이션
+            ball.style.bottom = '420px'; // 골대 위치
+            
+            // 0.5초(애니메이션 시간) 후에 결과 판정
+            setTimeout(() => {
+                checkGoal();
+            }, 500);
+        });
+
+        function checkGoal() {
+            // 위치 값 가져오기
+            const keeperRect = keeper.getBoundingClientRect();
+            const ballRect = ball.getBoundingClientRect();
+
+            // 충돌 감지 (단순화: x축 겹침 확인)
+            // 키퍼와 공의 중심점 비교가 더 정확하지만, 여기선 겹침 여부로 판단
+            const isBlocked = !(keeperRect.right < ballRect.left || 
+                                keeperRect.left > ballRect.right);
+
+            if (isBlocked) {
+                // 막힘 (게임 오버)
+                msg.style.color = 'red';
+                msg.innerText = "BLOCKED!";
+                msg.style.display = 'block';
+                setTimeout(() => {
+                    msg.style.display = 'none';
+                    gameOver();
+                }, 1000);
+            } else {
+                // 골인
+                score++;
+                document.getElementById('current-score').innerText = score;
+                msg.style.color = '#fff';
+                msg.innerText = "GOAL!!";
+                msg.style.display = 'block';
+                
+                setTimeout(() => {
+                    msg.style.display = 'none';
+                    nextRound();
+                }, 1000);
+            }
+        }
+
+        function nextRound() {
+            resetPositions();
+            isGaming = true;
+            moveKeeper(); // 속도 업데이트를 위해 재호출
+        }
+
+        function resetPositions() {
+            ball.style.transition = 'none';
+            ball.style.bottom = '50px';
+            // 약간의 랜덤성 부여 (공 위치)
+            ball.style.left = (150 + Math.random() * 60) + 'px';
+            
+            // reflow 강제하여 transition 제거 적용
+            void ball.offsetWidth;
+            ball.style.transition = 'all 0.5s ease-in';
+        }
+
+        function gameOver() {
+            saveForm.style.display = 'block';
+            document.getElementById('final-score').innerText = score;
+            clearInterval(keeperInterval);
+        }
+
+        function resetGame() {
+            startGame();
+        }
+
+        // ==========================================
+        // Firebase 데이터베이스 연동 (순위 저장/로드)
+        // ==========================================
+
+        function saveScore() {
+            const name = document.getElementById('player-name').value;
+            if (!name) {
+                alert("닉네임을 입력해주세요.");
+                return;
+            }
+
+            // 데이터 저장
+            db.ref('rankings').push({
+                name: name,
+                score: score,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            }).then(() => {
+                alert("랭킹이 등록되었습니다!");
+                startGame(); // 게임 재시작
+            }).catch((error) => {
+                console.error(error);
+                alert("저장 중 오류가 발생했습니다.");
+            });
+        }
+
+        // 실시간 랭킹 불러오기
+        const rankingList = document.getElementById('ranking-list');
+        
+        // 점수(score) 기준으로 정렬하여 가져오기
+        db.ref('rankings').orderByChild('score').limitToLast(10).on('value', (snapshot) => {
+            rankingList.innerHTML = "";
+            let data = [];
+            
+            snapshot.forEach((childSnapshot) => {
+                data.push(childSnapshot.val());
+            });
+
+            // Firebase는 오름차순 정렬이므로, 내림차순(높은 점수 먼저)으로 뒤집기
+            data.reverse(); 
+
+            if(data.length === 0) {
+                rankingList.innerHTML = "<tr><td colspan='3'>아직 등록된 랭킹이 없습니다.</td></tr>";
+            } else {
+                data.forEach((item, index) => {
+                    const row = `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${item.name}</td>
+                            <td>${item.score} 골</td>
+                        </tr>
+                    `;
+                    rankingList.innerHTML += row;
+                });
+            }
+        });
+
+        // 초기 실행
+        startGame();
+
+    </script>
+</body>
+</html>
